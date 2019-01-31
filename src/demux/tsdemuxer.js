@@ -14,6 +14,7 @@ import MpegAudio from './mpegaudio';
 import Event from '../events';
 import ExpGolomb from './exp-golomb';
 import SampleAesDecrypter from './sample-aes';
+import Decrypter from '../crypt/decrypter';
 // import Hex from '../utils/hex';
 import { logger } from '../utils/logger';
 import { ErrorTypes, ErrorDetails } from '../errors';
@@ -40,6 +41,7 @@ class TSDemuxer {
     this.typeSupported = typeSupported;
     this.remuxer = remuxer;
     this.sampleAes = null;
+    this.decrypter = new Decrypter(observer, config, { removePKCS7Padding: false });
   }
 
   setDecryptData (decryptdata) {
@@ -553,6 +555,49 @@ class TSDemuxer {
     }
   }
 
+  stringToUint8Array(str) {
+    var arr = [];
+    for (var i = 0, j = str.length; i < j; ++i) {
+      arr.push(str.charCodeAt(i));
+    }
+ 
+    var tmpUint8Array = new Uint8Array(arr);
+    return tmpUint8Array;
+  }
+
+  decryptBuffer (encryptedData, callback) {
+    let key = this.stringToUint8Array("tu*jd&8jk6-54Md@");
+    let keyBuffer = new Uint8Array(key).buffer;
+    let iv = this.stringToUint8Array("H&*y9_#ghoGy)a*E");
+    let ivBuffer = new Uint8Array(iv).buffer;
+    this.decrypter.decrypt(encryptedData, /*this.decryptdata.key.buffer*/keyBuffer, 
+      /*this.decryptdata.iv.buffer*/ivBuffer, callback);
+  }
+
+  // AAC - encrypt all full 16 bytes blocks starting from offset 16
+  decryptAacSample (unit) { //, callback, sync) {
+    let curUnit = unit;
+    if (curUnit.data.length <= 1 + 2 + 64 || curUnit.type !== 5 || curUnit.data[0] != 69) {
+          return;
+    }
+    let encryptedData = curUnit.data.subarray(1 + 2, 1 + 2 + 64);
+    let encryptedBuffer = encryptedData.buffer.slice(
+      encryptedData.byteOffset,
+      encryptedData.byteOffset + encryptedData.length);
+
+    let localthis = this;
+    this.decryptBuffer(encryptedBuffer, function (decryptedData) {
+      decryptedData = new Uint8Array(decryptedData);
+      //console.log(decryptedData);
+      curUnit.data[0] = 101;
+      curUnit.data.set(decryptedData, 1 + 2);
+
+      //if (!sync) {
+      //  localthis.decryptAacSamples(samples, sampleIndex + 1, callback);
+      //}
+    });
+  }
+
   _parseAVCPES (pes, last) {
     // logger.log('parse new PES');
     let track = this._avcTrack,
@@ -617,6 +662,10 @@ class TSDemuxer {
         if (debug) {
           avcSample.debug += 'IDR ';
         }
+
+        //console.log(unit.type);
+        //console.log(unit);
+        this.decryptAacSample (unit);
 
         avcSample.key = true;
         avcSample.frame = true;
