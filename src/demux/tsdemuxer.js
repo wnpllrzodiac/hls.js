@@ -574,8 +574,8 @@ class TSDemuxer {
       /*this.decryptdata.iv.buffer*/ivBuffer, callback);
   }
 
-  // AAC - encrypt all full 16 bytes blocks starting from offset 16
-  decryptAacSample (unit) { //, callback, sync) {
+  // AVC - encrypt first 16 bytes block starting from offset 2
+  decryptAvcSample (unit) {
     let curUnit = unit;
     if (curUnit.data.length <= 1 + 2 + 64 || curUnit.type !== 5 || curUnit.data[0] != 69) {
           return;
@@ -589,12 +589,8 @@ class TSDemuxer {
     this.decryptBuffer(encryptedBuffer, function (decryptedData) {
       decryptedData = new Uint8Array(decryptedData);
       //console.log(decryptedData);
-      curUnit.data[0] = 101;
+      curUnit.data[0] = 101; // 0x45 -> 0x65
       curUnit.data.set(decryptedData, 1 + 2);
-
-      //if (!sync) {
-      //  localthis.decryptAacSamples(samples, sampleIndex + 1, callback);
-      //}
     });
   }
 
@@ -665,7 +661,9 @@ class TSDemuxer {
 
         //console.log(unit.type);
         //console.log(unit);
-        this.decryptAacSample (unit);
+        if (this.config.tyliveDecrypt) {
+          this.decryptAvcSample (unit);
+        }
 
         avcSample.key = true;
         avcSample.frame = true;
